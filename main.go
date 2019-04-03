@@ -1,8 +1,15 @@
 package main
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/bobcob7/gominer/pe"
+)
 
 func main() {
-	fmt.Println("Hello World")
-	NewPE("putty.exe")
+	meta, err := pe.NewPE("putty.exe")
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%#v\n", meta)
 }

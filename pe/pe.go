@@ -1,8 +1,9 @@
-package main
+package pe
 
 import (
 	"bytes"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"os"
 )
@@ -141,11 +142,21 @@ type Section struct {
 	Characteristics      uint32
 }
 
-func NewPE(fileName string) {
+type PE struct {
+	AddressOfEntryPoint uint32
+	BaseOfCode          uint32
+	SizeOfStackReserve  uint64
+	SizeOfStackCommit   uint64
+	SizeOfHeapReserve   uint64
+	SizeOfHeapCommit    uint64
+	Sections            []Section
+}
+
+func NewPE(fileName string) (output PE, err error) {
 	// Open file
 	f, err := os.Open(fileName)
 	if err != nil {
-		panic(err)
+		return
 	}
 
 	// Read offset in DOS stub at 0x3C
@@ -153,24 +164,25 @@ func NewPE(fileName string) {
 	buffer := make([]byte, 4)
 	n, err := f.ReadAt(buffer, 0x3c)
 	if err != nil {
-		panic(err)
+		return
 	}
 	if n != 4 {
-		panic("Could not read offset")
+		err = errors.New("Could not read offset")
+		return
 	}
 	buf := bytes.NewReader(buffer)
 	binary.Read(buf, binary.LittleEndian, &offset)
-	fmt.Printf("%#v\n", offset)
 
 	// Read COFF Header
 	var coffHeader COFFHeader
 	buffer = make([]byte, 24)
 	n, err = f.ReadAt(buffer, int64(offset))
 	if err != nil {
-		panic(err)
+		return
 	}
 	if n != 24 {
-		panic("Could not read offset")
+		err = errors.New("Could not read offset")
+		return
 	}
 	buf = bytes.NewReader(buffer)
 	binary.Read(buf, binary.LittleEndian, &coffHeader)
@@ -178,39 +190,53 @@ func NewPE(fileName string) {
 	// Read Optional Header
 	headerSize := int(coffHeader.SizeOfOptionalHeader)
 	if headerSize > 0 {
-		fmt.Printf("Reading in a %d byte file into a byte struct\n", headerSize)
 		buffer = make([]byte, headerSize)
 		n, err = f.ReadAt(buffer, int64(offset+24))
 		if err != nil {
-			panic(err)
+			return
 		}
 		if n != headerSize {
-			panic("Could not read offset")
+			err = errors.New("Could not read offset")
+			return
 		}
 
 		if buffer[0] != 0xb {
-			panic("Only supports PE32/PE32+ files")
+			err = errors.New("Only supports PE32/PE32+ files")
+			return
 		}
 		isPlus := false
-		if buffer[1] == 1 {
-			fmt.Println("Magic: PE32")
-		} else if buffer[1] == 2 {
-			fmt.Println("Magic: PE32+")
+		if buffer[1] == 2 {
 			isPlus = true
-		} else {
-			panic("Only supports PE32/PE32+ files")
+		} else if buffer[1] != 1 {
+			err = errors.New("Only supports PE32/PE32+ files")
+			return
 		}
 		if isPlus {
 			optionalHeader := OptionalHeaderPlus{}
 			buf = bytes.NewReader(buffer)
-			err := binary.Read(buf, binary.LittleEndian, &optionalHeader)
+			err = binary.Read(buf, binary.LittleEndian, &optionalHeader)
 			if err != nil {
-				panic(err)
+				return
 			}
+			output.AddressOfEntryPoint = optionalHeader.AddressOfEntryPoint
+			output.BaseOfCode = optionalHeader.BaseOfCode
+			output.SizeOfHeapCommit = optionalHeader.SizeOfHeapCommit
+			output.SizeOfHeapReserve = optionalHeader.SizeOfHeapReserve
+			output.SizeOfStackCommit = optionalHeader.SizeOfStackCommit
+			output.SizeOfStackReserve = optionalHeader.SizeOfStackReserve
 		} else {
 			optionalHeader := OptionalHeader{}
 			buf = bytes.NewReader(buffer)
-			binary.Read(buf, binary.LittleEndian, &optionalHeader)
+			err = binary.Read(buf, binary.LittleEndian, &optionalHeader)
+			if err != nil {
+				return
+			}
+			output.AddressOfEntryPoint = optionalHeader.AddressOfEntryPoint
+			output.BaseOfCode = optionalHeader.BaseOfCode
+			output.SizeOfHeapCommit = uint64(optionalHeader.SizeOfHeapCommit)
+			output.SizeOfHeapReserve = uint64(optionalHeader.SizeOfHeapReserve)
+			output.SizeOfStackCommit = uint64(optionalHeader.SizeOfStackCommit)
+			output.SizeOfStackReserve = uint64(optionalHeader.SizeOfStackReserve)
 		}
 	}
 
@@ -220,19 +246,22 @@ func NewPE(fileName string) {
 	buffer = make([]byte, sectionSizes)
 	n, err = f.ReadAt(buffer, int64(sectionsOffset))
 	if err != nil {
-		panic(err)
+		return
 	}
 	if n != sectionSizes {
-		panic("Could not read sections")
+		err = errors.New("Could not read sections")
+		return
 	}
-	sections := make([]Section, coffHeader.NumberOfSections)
+	output.Sections = make([]Section, coffHeader.NumberOfSections)
 	sectionStart := 0
 	for sectionNum := 0; sectionNum < int(coffHeader.NumberOfSections); sectionNum++ {
 		buf = bytes.NewReader(buffer[sectionStart : sectionStart+40])
 		sectionStart += 40
-		err := binary.Read(buf, binary.LittleEndian, &sections[sectionNum])
+		err = binary.Read(buf, binary.LittleEndian, &output.Sections[sectionNum])
 		if err != nil {
 			fmt.Printf("Could not read section#%d: %#v\n", sectionNum, err)
+			return
 		}
 	}
+	return
 }
