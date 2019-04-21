@@ -129,7 +129,7 @@ type OptionalHeader struct {
 	DataDirectories
 }
 
-type Section struct {
+type RealSection struct {
 	Name                 [8]byte
 	VirtualSize          uint32
 	VirtualAddress       uint32
@@ -143,6 +143,7 @@ type Section struct {
 }
 
 type PE struct {
+	filename            string
 	AddressOfEntryPoint uint32
 	BaseOfCode          uint32
 	SizeOfStackReserve  uint64
@@ -158,6 +159,7 @@ func NewPE(fileName string) (output PE, err error) {
 	if err != nil {
 		return
 	}
+	output.filename = fileName
 
 	// Read offset in DOS stub at 0x3C
 	var offset uint32
@@ -254,14 +256,33 @@ func NewPE(fileName string) (output PE, err error) {
 	}
 	output.Sections = make([]Section, coffHeader.NumberOfSections)
 	sectionStart := 0
+	tempSection := RealSection{}
 	for sectionNum := 0; sectionNum < int(coffHeader.NumberOfSections); sectionNum++ {
 		buf = bytes.NewReader(buffer[sectionStart : sectionStart+40])
 		sectionStart += 40
-		err = binary.Read(buf, binary.LittleEndian, &output.Sections[sectionNum])
+		err = binary.Read(buf, binary.LittleEndian, &tempSection)
+		output.Sections[sectionNum] = newSection(tempSection)
 		if err != nil {
 			fmt.Printf("Could not read section#%d: %#v\n", sectionNum, err)
 			return
 		}
 	}
 	return
+}
+
+func (p PE) Print() string {
+	output := fmt.Sprintf(`File:			%s
+Entrypoint address:	0x%08X
+Base of code:		0x%08X
+`,
+		p.filename,
+		p.AddressOfEntryPoint,
+		p.BaseOfCode,
+	)
+
+	for i, section := range p.Sections {
+		output += fmt.Sprintf("Section #%d\n", i+1)
+		output += section.Print()
+	}
+	return output
 }
