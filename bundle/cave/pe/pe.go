@@ -5,7 +5,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"os"
 )
 
 // COFFHeader is a standard Common Object File Format. Size 24
@@ -153,55 +152,26 @@ type PE struct {
 	Sections            []Section
 }
 
-func NewPE(fileName string) (output PE, err error) {
+func NewPE(fileName string, inputBuffer []byte) (output PE, err error) {
 	// Open file
-	f, err := os.Open(fileName)
-	if err != nil {
-		return
-	}
 	output.filename = fileName
 
 	// Read offset in DOS stub at 0x3C
 	var offset uint32
-	buffer := make([]byte, 4)
-	n, err := f.ReadAt(buffer, 0x3c)
-	if err != nil {
-		return
-	}
-	if n != 4 {
-		err = errors.New("Could not read offset")
-		return
-	}
+	buffer := inputBuffer[0x3c:0x3c+4]
 	buf := bytes.NewReader(buffer)
 	binary.Read(buf, binary.LittleEndian, &offset)
 
 	// Read COFF Header
 	var coffHeader COFFHeader
-	buffer = make([]byte, 24)
-	n, err = f.ReadAt(buffer, int64(offset))
-	if err != nil {
-		return
-	}
-	if n != 24 {
-		err = errors.New("Could not read offset")
-		return
-	}
+	buffer = inputBuffer[offset:offset+24]
 	buf = bytes.NewReader(buffer)
 	binary.Read(buf, binary.LittleEndian, &coffHeader)
 
 	// Read Optional Header
 	headerSize := int(coffHeader.SizeOfOptionalHeader)
 	if headerSize > 0 {
-		buffer = make([]byte, headerSize)
-		n, err = f.ReadAt(buffer, int64(offset+24))
-		if err != nil {
-			return
-		}
-		if n != headerSize {
-			err = errors.New("Could not read offset")
-			return
-		}
-
+		buffer = inputBuffer[offset+24:offset+24+uint32(headerSize)]
 		if buffer[0] != 0xb {
 			err = errors.New("Only supports PE32/PE32+ files")
 			return
@@ -245,15 +215,8 @@ func NewPE(fileName string) (output PE, err error) {
 	// Read Sections
 	sectionSizes := int(coffHeader.NumberOfSections) * 40
 	sectionsOffset := headerSize + int(offset) + 24
-	buffer = make([]byte, sectionSizes)
-	n, err = f.ReadAt(buffer, int64(sectionsOffset))
-	if err != nil {
-		return
-	}
-	if n != sectionSizes {
-		err = errors.New("Could not read sections")
-		return
-	}
+	
+	buffer = inputBuffer[sectionsOffset:sectionsOffset + sectionSizes]
 	output.Sections = make([]Section, coffHeader.NumberOfSections)
 	sectionStart := 0
 	tempSection := RealSection{}

@@ -2,9 +2,8 @@ package cave
 
 import (
 	"fmt"
-	"os"
 
-	"github.com/bobcob7/gominer/pe"
+	"github.com/bobcob7/gominer/bundle/cave/pe"
 )
 
 type Cave struct {
@@ -38,25 +37,14 @@ Address:		0x%08X - 0x%08X
 	)
 }
 
-func FindCaves(fileName string, threshold int) ([]Cave, error) {
+func FindCaves(inputBuffer []byte, threshold int) []Cave {
 	output := make([]Cave, 0, 10)
-
-	f, err := os.Open(fileName)
-	if err != nil {
-		return nil, err
-	}
-
-	buffer := make([]byte, 1)
 	var position int
 	var caveStart int
 	var caveSize int
 	var isCave bool
-	for {
-		_, err := f.Read(buffer)
-		if err != nil {
-			break
-		}
-		if buffer[0] == 0x00 {
+	for _, char := range inputBuffer {
+		if char == 0x00 {
 			if isCave {
 				caveSize++
 			} else {
@@ -73,7 +61,7 @@ func FindCaves(fileName string, threshold int) ([]Cave, error) {
 		position++
 	}
 
-	return output, err
+	return output
 }
 
 func Analyse(caves []Cave, sections []pe.Section) []MetaCaves {

@@ -1,25 +1,42 @@
 package main
 
 import (
-	"fmt"
-
-	"github.com/bobcob7/gominer/cave"
-	"github.com/bobcob7/gominer/pe"
+	"net/http"
+	"log"
+	"io/ioutil"
+	"runtime"
 )
 
 func main() {
-	fileName := "putty.exe"
-	meta, err := pe.NewPE(fileName)
+	indexData, err := ioutil.ReadFile("index.html")
 	if err != nil {
-		panic(err)
+		log.Fatalf("Could not read index file: %s\n", err)
 	}
-	caves, err := cave.FindCaves(fileName, 300)
-	fmt.Printf("%s\n", meta.Print())
 
-	coolCaves := cave.Analyse(caves, meta.Sections)
-	for _, cave := range coolCaves {
-		if cave.Characteristics.ExecutableCode {
-			fmt.Println(cave.Print())
-		}
+	wasmExecLocation := runtime.GOROOT() + "/misc/wasm/wasm_exec.js"
+	wasmExecData, err := ioutil.ReadFile(wasmExecLocation)
+	if err != nil {
+		log.Fatalf("Could not read wasm_exec file: %s\n", err)
 	}
+
+	wasmData, err := ioutil.ReadFile("gominer.wasm")
+	if err != nil {
+		log.Fatalf("Could not read wasm file: %s\n", err)
+	}
+
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write(indexData)
+	})
+
+	http.HandleFunc("/wasm_exec.js", func(w http.ResponseWriter, r *http.Request) {
+		w.Write(wasmExecData)
+	})
+
+	http.HandleFunc("/gominer.wasm", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/wasm")
+		w.WriteHeader(http.StatusOK)
+		w.Write(wasmData)
+	})
+
+	log.Fatal(http.ListenAndServe(":9001", nil))
 }
